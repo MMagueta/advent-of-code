@@ -37,11 +37,7 @@ WITH(
 );
 GO
 
-CREATE OR ALTER PROCEDURE ComputatioII.Cube(@bag VARCHAR(256)) RETURNS @return TABLE (
-    [green cube] INTEGER NOT NULL,
-    [blue cube] INTEGER NOT NULL,
-    [red cube] INTEGER NOT NULL
-) AS BEGIN
+CREATE OR ALTER PROCEDURE ComputatioII.Cube @bag VARCHAR(256), @gameNumber INTEGER AS
 WITH Cubes([blue cube], [red cube], [green cube]) AS (
     SELECT CASE
             WHEN (value LIKE '%blue%') THEN TRIM(REPLACE(value, 'blue', ''))
@@ -56,25 +52,21 @@ WITH Cubes([blue cube], [red cube], [green cube]) AS (
             ELSE 0
            END AS [green cube]
     FROM STRING_SPLIT(@bag, ','))
-INSERT @return
-SELECT [green cube], [blue cube], [red cube] FROM Cubes
-RETURN
-END;
+INSERT INTO ComputatioII.Bag([game number], [blue cubes], [red cubes], [green cubes])
+SELECT @gameNumber AS [game number], [blue cube], [red cube], [green cube] FROM Cubes;
 GO
 
-CREATE OR ALTER FUNCTION ComputatioII.MatchBags(@line VARCHAR(256))
-RETURNS @return TABLE (
-    [bag] VARCHAR(256) NOT NULL
-) AS BEGIN
+CREATE OR ALTER PROCEDURE ComputatioII.MatchBags @line VARCHAR(256), @gameNumber INTEGER
+AS BEGIN
 WITH Bag([bag]) AS (
-        SELECT value AS [bag] FROM 
+        SELECT value AS [bag],  FROM 
         STRING_SPLIT(SUBSTRING(@line,
                             CAST(PATINDEX('%:%', @line) AS INTEGER) + 1,
                             LEN(@line)),
                     ';'))
-INSERT @return
-SELECT bag FROM Bag
-RETURN
+FOR bag IN (SELECT bag FROM Bag) LOOP
+    EXECUTE ComputatioII.Cube(bag, @gameNumber)
+END LOOP
 END;
 GO
 
@@ -87,4 +79,4 @@ SELECT
 FROM ComputatioII.LineEntry AS li
 CROSS JOIN ComputatioII.Game AS g;
 
-SELECT * FROM ComputatioII.Cube(' 2 green, 1 blue');
+SELECT * FROM ComputatioII.Cube(' 2 green, 1 blue', 1);
