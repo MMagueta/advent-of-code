@@ -53,30 +53,77 @@ WITH Cubes([blue cube], [red cube], [green cube]) AS (
            END AS [green cube]
     FROM STRING_SPLIT(@bag, ','))
 INSERT INTO ComputatioII.Bag([game number], [blue cubes], [red cubes], [green cubes])
-SELECT @gameNumber AS [game number], [blue cube], [red cube], [green cube] FROM Cubes;
+SELECT @gameNumber AS [game number], SUM([blue cube]), SUM([red cube]), SUM([green cube]) FROM Cubes;
 GO
 
 CREATE OR ALTER PROCEDURE ComputatioII.MatchBags @line VARCHAR(256), @gameNumber INTEGER
 AS BEGIN
-WITH Bag([bag]) AS (
-        SELECT value AS [bag],  FROM 
+
+DECLARE @bag VARCHAR(256)
+DECLARE cur CURSOR LOCAL for
+    SELECT value AS [bag] FROM 
         STRING_SPLIT(SUBSTRING(@line,
                             CAST(PATINDEX('%:%', @line) AS INTEGER) + 1,
                             LEN(@line)),
-                    ';'))
-FOR bag IN (SELECT bag FROM Bag) LOOP
-    EXECUTE ComputatioII.Cube(bag, @gameNumber)
-END LOOP
+                    ';')
+open cur
+
+fetch next from cur into @bag
+
+WHILE @@FETCH_STATUS = 0 BEGIN
+
+    IF NOT EXISTS (SELECT [game number] FROM ComputatioII.Game WHERE [game number] = @gameNumber)
+        INSERT INTO ComputatioII.Game VALUES (@gameNumber);
+
+    EXECUTE ComputatioII.Cube @bag, @gameNumber;
+
+    fetch next from cur into @bag
+END
+
+close cur;
+deallocate cur;
+
 END;
 GO
 
-INSERT ComputatioII.Game
-SELECT SUBSTRING([line entry], 5, CAST(PATINDEX('%:%', [line entry]) AS INTEGER) - 5) AS [game number]
-FROM ComputatioII.LineEntry;
 
-INSERT ComputatioII.Bag
-SELECT 
-FROM ComputatioII.LineEntry AS li
-CROSS JOIN ComputatioII.Game AS g;
+DECLARE @gameNumber INTEGER
+DECLARE @line VARCHAR(256)
+DECLARE cur CURSOR LOCAL for
+    SELECT SUBSTRING([line entry], 5, CAST(PATINDEX('%:%', [line entry]) AS INTEGER) - 5) AS [game number],
+           [line entry]
+    FROM ComputatioII.LineEntry
 
-SELECT * FROM ComputatioII.Cube(' 2 green, 1 blue', 1);
+open cur
+
+fetch next from cur into @gameNumber, @line
+
+WHILE @@FETCH_STATUS = 0 BEGIN
+
+    --execute your sproc on each row
+    execute ComputatioII.MatchBags @line, @gameNumber;
+
+    fetch next from cur into @gameNumber, @line
+END
+
+close cur;
+deallocate cur;
+
+-- Possible games given number
+DECLARE @green INTEGER = 13;
+DECLARE @red   INTEGER = 12;
+DECLARE @blue  INTEGER = 14;
+
+SELECT bag.[game number] AS possible
+FROM ComputatioII.Bag bag
+GROUP BY bag.[game number]
+HAVING SUM(bag.[blue cubes]) <= @blue 
+AND SUM(bag.[red cubes]) <= @red
+AND SUM(bag.[green cubes]) <= @green
+
+SELECT bag.[game number] AS impossible
+FROM ComputatioII.Bag bag
+GROUP BY bag.[game number]
+HAVING SUM(bag.[blue cubes]) > @blue 
+OR SUM(bag.[red cubes]) > @red
+OR SUM(bag.[green cubes]) > @green;
